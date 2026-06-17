@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Chat — Stage 4</title>
+    <style>
+        body { font-family: monospace; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+        #messages { border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: 10px; margin-bottom: 10px; background: #f9f9f9; }
+        .msg-join  { color: green; }
+        .msg-leave { color: red; }
+        .msg-chat  { color: black; }
+        input { padding: 6px; margin-right: 4px; }
+        button { padding: 6px 12px; cursor: pointer; }
+        #chat-form { display: none; }
+    </style>
+</head>
+<body>
+    <h2>Stage 4 — Spring Boot + STOMP Chat</h2>
+
+    <div id="join-form">
+        <input id="username" type="text" placeholder="Your name" />
+        <button onclick="connect()">Join</button>
+    </div>
+
+    <div id="chat-form">
+        <div id="messages"></div>
+        <input id="message" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter') send()" />
+        <button onclick="send()">Send</button>
+        <button onclick="disconnect()">Leave</button>
+    </div>
+
+    <!-- SockJS: WebSocket with fallback transport -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <!-- STOMP protocol client -->
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <script>
+        var stompClient = null;
+
+        function connect() {
+            var username = document.getElementById('username').value.trim();
+            if (!username) return;
+
+            // SockJS opens the connection; STOMP runs on top of it
+            var socket = new SockJS('/ws-chat');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null; // silence STOMP debug logs in console
+
+            stompClient.connect({}, function () {
+                document.getElementById('join-form').style.display = 'none';
+                document.getElementById('chat-form').style.display = 'block';
+
+                // Subscribe to the topic — any message sent to /topic/chat arrives here
+                stompClient.subscribe('/topic/chat', function (payload) {
+                    var msg = JSON.parse(payload.body);
+                    showMessage(msg);
+                });
+
+                // Announce we joined
+                stompClient.send('/app/chat.join', {}, JSON.stringify({ sender: username, content: '' }));
+            });
+        }
+
+        function send() {
+            var username = document.getElementById('username').value.trim();
+            var content  = document.getElementById('message').value.trim();
+            if (!content) return;
+
+            stompClient.send('/app/chat.send', {}, JSON.stringify({
+                type: 'CHAT',
+                sender: username,
+                content: content
+            }));
+            document.getElementById('message').value = '';
+        }
+
+        function disconnect() {
+            if (stompClient) stompClient.disconnect();
+            document.getElementById('join-form').style.display = 'block';
+            document.getElementById('chat-form').style.display = 'none';
+        }
+
+        function showMessage(msg) {
+            var div = document.getElementById('messages');
+            var p = document.createElement('p');
+            p.className = 'msg-' + msg.type.toLowerCase();
+            if (msg.type === 'JOIN')  p.textContent = '▶ ' + msg.sender + ' joined';
+            else if (msg.type === 'LEAVE') p.textContent = '◀ ' + msg.sender + ' left';
+            else p.textContent = msg.sender + ': ' + msg.content;
+            div.appendChild(p);
+            div.scrollTop = div.scrollHeight;
+        }
+    </script>
+</body>
+</html>
